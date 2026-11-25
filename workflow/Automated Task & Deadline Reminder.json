@@ -1,0 +1,530 @@
+{
+  "name": "Automated Task & Deadline Reminder",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 8
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        0,
+        -80
+      ],
+      "id": "520e12f8-e05a-4df3-b248-88a5d40636a4",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "1PwFi4yxhBIiUE-wE77IshGqyiHDNJ2sQjm0qE6-jhjA",
+          "mode": "list",
+          "cachedResultName": "Automated Task & Deadline Reminder",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1PwFi4yxhBIiUE-wE77IshGqyiHDNJ2sQjm0qE6-jhjA/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Tasks",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1PwFi4yxhBIiUE-wE77IshGqyiHDNJ2sQjm0qE6-jhjA/edit#gid=0"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        224,
+        -80
+      ],
+      "id": "b17ac362-c313-4456-9ac1-42663d505609",
+      "name": "Get All Tasks",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "OKkqDH11KnvqdjLy",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst tasks = $input.all();\n\n// Get today's date in Manila timezone\nconst today = new Intl.DateTimeFormat(\"en-CA\", {\n  timeZone: \"Asia/Manila\",\n  year: \"numeric\",\n  month: \"2-digit\",\n  day: \"2-digit\"\n}).format(new Date());\n\nconst todayDate = new Date(today + \"T00:00:00Z\");\n\n// Normalize dates from Google Sheets\nfunction normalizeDate(value) {\n  if (!value) return \"\";\n\n  const match = String(value).trim().match(/^(\\d{4}-\\d{2}-\\d{2})/);\n\n  if (!match) return \"\";\n\n  const date = match[1];\n  const parsed = new Date(date + \"T00:00:00Z\");\n\n  return !isNaN(parsed.getTime()) &&\n    parsed.toISOString().slice(0, 10) === date\n      ? date\n      : \"\";\n}\n\nreturn tasks.map(item => {\n  const task = item.json;\n\n  // Task information\n  const taskId = task.task_id;\n  const taskName = task.task_name;\n  const dueDate = normalizeDate(task.due_date);\n  const priority = task.priority;\n  const status = String(task.status || \"\").trim();\n  const email = String(task.email || \"\").trim();\n\n  const reminderDays = Number(task.reminder_days);\n  const lastReminded = normalizeDate(task.last_reminded);\n\n  // Default values\n  let shouldRemind = false;\n  let reminderReason = \"No reminder required\";\n  let daysUntilDue = null;\n  let reminderStatus = \"Not Required\";\n\n  // Validate due date\n  if (!dueDate) {\n    reminderReason = \"Invalid or missing due date\";\n    reminderStatus = \"Invalid Date\";\n\n  } else {\n    const deadline = new Date(dueDate + \"T00:00:00Z\");\n\n    daysUntilDue = Math.round(\n      (deadline - todayDate) / 86400000\n    );\n\n    // Completed tasks\n    if (status.toLowerCase() === \"completed\") {\n      reminderReason = \"Task already completed\";\n      reminderStatus = \"Completed\";\n\n    // Invalid email\n    } else if (!email.includes(\"@\")) {\n      reminderReason = \"Invalid recipient email\";\n      reminderStatus = \"Invalid Email\";\n\n    // Check reminder days\n    } else if (\n      !Number.isFinite(reminderDays) ||\n      reminderDays < 0\n    ) {\n      reminderReason = \"Invalid reminder days\";\n      reminderStatus = \"Invalid Configuration\";\n\n    // Already reminded today\n    } else if (lastReminded === today) {\n      reminderReason = \"Already reminded today\";\n      reminderStatus = \"Already Sent Today\";\n\n    // Eligible for reminder\n    } else if (daysUntilDue <= reminderDays) {\n\n      shouldRemind = true;\n      reminderStatus = \"Ready to Send\";\n\n      if (daysUntilDue < 0) {\n        reminderReason = \"Overdue task\";\n      } else if (daysUntilDue === 0) {\n        reminderReason = \"Due today\";\n      } else {\n        reminderReason = \"Upcoming deadline\";\n      }\n\n    } else {\n      reminderReason = \"Outside reminder window\";\n      reminderStatus = \"Not Required\";\n    }\n  }\n\n  // Preserve the previous reminder date\n  const lastRemindedDisplay = lastReminded || \"Never\";\n\n  return {\n    json: {\n      ...task,\n\n      // Deadline calculations\n      days_until_due: daysUntilDue,\n      should_remind: shouldRemind,\n      reminder_reason: reminderReason,\n\n      // Reminder tracking\n      last_reminded: lastReminded,\n      last_reminded_display: lastRemindedDisplay,\n      reminder_status: reminderStatus,\n      reminder_status_display: reminderStatus,\n\n      // Additional information\n      checked_date: today,\n      reminder_priority: priority\n    }\n  };\n});\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        448,
+        -80
+      ],
+      "id": "eeaada78-25ae-4865-a5c9-8e05107fe3f7",
+      "name": "Check Task Deadlines"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 4
+          },
+          "conditions": [
+            {
+              "id": "14f3ea69-2fdf-4d1c-90c1-d5a562997929",
+              "leftValue": "={{ $json.should_remind }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.4,
+      "position": [
+        672,
+        -80
+      ],
+      "id": "e1165095-87de-42f2-8f07-3368188d6fb9",
+      "name": "Filter Reminder Tasks"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.email }}",
+        "subject": "= {{   $json.reminder_reason === \"Overdue task\"     ? \"OVERDUE: \" + $json.task_name     : $json.reminder_reason === \"Due today\"     ? \"Due Today: \" + $json.task_name     : \"Upcoming Deadline: \" + $json.task_name }}",
+        "emailType": "text",
+        "message": "=\n{{\n  \"Hello,\\n\\n\" +\n  \"This is an automated reminder about your task.\\n\\n\" +\n  \"TASK DETAILS\\n\" +\n  \"----------------------------\\n\" +\n  \"Task ID: \" + $json.task_id + \"\\n\" +\n  \"Task Name: \" + $json.task_name + \"\\n\" +\n  \"Description: \" + $json.description + \"\\n\" +\n  \"Due Date: \" + $json.due_date + \"\\n\" +\n  \"Priority: \" + $json.priority + \"\\n\" +\n  \"Status: \" + $json.status + \"\\n\" +\n  \"Reminder: \" + $json.reminder_reason + \"\\n\\n\" +\n  \"Days Until Deadline: \" +\n  (\n    $json.days_until_due < 0\n      ? Math.abs($json.days_until_due) + \" days overdue\"\n      : $json.days_until_due + \" days remaining\"\n  ) +\n  \"\\n\\nPlease make sure to complete this task on time.\\n\\n\" +\n  \"Best regards,\\n\" +\n  \"Automated Task Reminder System\"\n}}\n",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        896,
+        -80
+      ],
+      "id": "c51b8e63-3dac-46d6-a9fb-3fc17daea5f3",
+      "name": "Send Task Reminder",
+      "webhookId": "9e18d659-3c66-4500-a0ef-62162da20557",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "jLxWaRUIVsLiAsVq",
+          "name": "Gmail account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "1PwFi4yxhBIiUE-wE77IshGqyiHDNJ2sQjm0qE6-jhjA",
+          "mode": "list",
+          "cachedResultName": "Automated Task & Deadline Reminder",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1PwFi4yxhBIiUE-wE77IshGqyiHDNJ2sQjm0qE6-jhjA/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Tasks",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1PwFi4yxhBIiUE-wE77IshGqyiHDNJ2sQjm0qE6-jhjA/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "task_id": "={{ $('Get All Tasks').item.json.task_id }}",
+            "task_name": "={{ $('Get All Tasks').item.json.task_name }}",
+            "description": "={{ $('Get All Tasks').item.json.description }}",
+            "due_date": "={{ $('Get All Tasks').item.json.due_date }}",
+            "priority": "={{ $('Get All Tasks').item.json.priority }}",
+            "status": "={{ $('Get All Tasks').item.json.status }}",
+            "email": "={{ $('Get All Tasks').item.json.email }}",
+            "reminder_days": "={{ $('Get All Tasks').item.json.reminder_days }}",
+            "last_reminded": "=\n{{ $now.setZone('Asia/Manila').toFormat('yyyy-MM-dd') }}\n  ",
+            "reminder_status": "Sent"
+          },
+          "matchingColumns": [
+            "task_id"
+          ],
+          "schema": [
+            {
+              "id": "task_id",
+              "displayName": "task_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "task_name",
+              "displayName": "task_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "description",
+              "displayName": "description",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "due_date",
+              "displayName": "due_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "priority",
+              "displayName": "priority",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "email",
+              "displayName": "email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "reminder_days",
+              "displayName": "reminder_days",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "last_reminded",
+              "displayName": "last_reminded",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "reminder_status",
+              "displayName": "reminder_status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1120,
+        -176
+      ],
+      "id": "2b238c1c-18e7-49b2-88d7-78f270ebe3a4",
+      "name": "Update Reminder Tracking",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "OKkqDH11KnvqdjLy",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "1PwFi4yxhBIiUE-wE77IshGqyiHDNJ2sQjm0qE6-jhjA",
+          "mode": "list",
+          "cachedResultName": "Automated Task & Deadline Reminder",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1PwFi4yxhBIiUE-wE77IshGqyiHDNJ2sQjm0qE6-jhjA/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Tasks",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1PwFi4yxhBIiUE-wE77IshGqyiHDNJ2sQjm0qE6-jhjA/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "task_id": "={{ $('Get All Tasks').item.json.task_id }}",
+            "task_name": "={{ $('Get All Tasks').item.json.task_name }}",
+            "description": "={{ $('Get All Tasks').item.json.description }}",
+            "due_date": "={{ $('Get All Tasks').item.json.due_date }}",
+            "priority": "={{ $('Get All Tasks').item.json.priority }}",
+            "status": "={{ $('Get All Tasks').item.json.status }}",
+            "email": "={{ $('Get All Tasks').item.json.email }}",
+            "reminder_days": "={{ $('Get All Tasks').item.json.reminder_days }}",
+            "last_reminded": "=\n{{ $now.setZone('Asia/Manila').toFormat('yyyy-MM-dd') }}\n  ",
+            "reminder_status": "Failed"
+          },
+          "matchingColumns": [
+            "task_id"
+          ],
+          "schema": [
+            {
+              "id": "task_id",
+              "displayName": "task_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "task_name",
+              "displayName": "task_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "description",
+              "displayName": "description",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "due_date",
+              "displayName": "due_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "priority",
+              "displayName": "priority",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "email",
+              "displayName": "email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "reminder_days",
+              "displayName": "reminder_days",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "last_reminded",
+              "displayName": "last_reminded",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "reminder_status",
+              "displayName": "reminder_status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1120,
+        16
+      ],
+      "id": "c89f584d-898d-4fa1-a8da-05aa7fa5fdf6",
+      "name": "Update Failed Reminder",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "OKkqDH11KnvqdjLy",
+          "name": "Google Sheets account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get All Tasks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get All Tasks": {
+      "main": [
+        [
+          {
+            "node": "Check Task Deadlines",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Task Deadlines": {
+      "main": [
+        [
+          {
+            "node": "Filter Reminder Tasks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Reminder Tasks": {
+      "main": [
+        [
+          {
+            "node": "Send Task Reminder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Task Reminder": {
+      "main": [
+        [
+          {
+            "node": "Update Reminder Tracking",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Update Failed Reminder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "timeSavedMode": "fixed",
+    "timezone": "Asia/Manila",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "versionId": "c5a54f9e-5d9c-4c05-aee0-47a48e2b55c3",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "558d88703fb65b2d0e44613bc35916258b0f0bf983c5d4730c00c424b77ca36a"
+  },
+  "nodeGroups": [],
+  "id": "2Vdp8FZTACXoPrD2",
+  "tags": []
+}
