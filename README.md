@@ -77,9 +77,12 @@ This prevents a failed email attempt from being recorded as a successful reminde
 Automated-Task-Deadline-Reminder-n8n/
 ├── README.md
 ├── workflow/
-│   └── PLACE_WORKFLOW_EXPORT_HERE.md
+│   └── task-deadline-reminder.json
 ├── screenshots/
-│   └── ADD_SCREENSHOTS_HERE.md
+│   ├── workflow-overview.png
+│   ├── google-sheets-tracking.png
+│   ├── email-notification.png
+│   └── execution-success.png
 └── .gitignore
 ```
 
